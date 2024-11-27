@@ -1,0 +1,32 @@
+image: node:22.9.0-alpine
+
+pipelines:
+  default:
+    - step:
+        name: Install dependencies
+        caches:
+          - node
+        script:
+          # Step 1: Install dependencies for the backend
+          - npm install
+          - npx prisma generate
+
+          # Step 2: Start PostgreSQL container
+          - apk add --no-cache docker
+          - docker run --name my-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=root -e POSTGRES_DB=msa -p 5432:5432 -d postgres:latest
+
+          # Step 3: Wait for PostgreSQL to be ready
+          - echo "Waiting for PostgreSQL to start..."
+          - until docker exec my-postgres pg_isready -U postgres; do sleep 2; done
+
+          # Step 4: Build the backend Docker image
+          - docker build -t my-backend .
+
+          # Step 5: Run the backend container
+          - docker run --name my-backend -e DATABASE_URL=postgresql://postgres:root@localhost:5432/msa -p 3000:3000 -d my-backend
+
+          # Step 6: Run the tests (if available)
+          - npm run test
+
+          # Step 7: Build the project (if necessary)
+          - npm run build

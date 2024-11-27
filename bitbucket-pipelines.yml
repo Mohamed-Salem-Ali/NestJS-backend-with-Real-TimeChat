@@ -1,0 +1,113 @@
+image: node:20.9.0-alpine
+
+clone:
+  depth: full
+
+definitions:
+  services:
+   docker:
+      memory: 2048  # Increase if necessary
+  
+  steps:
+    - step: &push-ecr-image-test
+          caches:
+            - node
+          services:
+            - docker
+          script:
+            - echo "Building Docker image for test environment..."
+            - docker build -t mohamed.younes/my-backend-repo:latest .
+            - echo "Pushing Docker image to AWS ECR for test environment..."
+            - pipe: atlassian/aws-ecr-push-image:2.3.0
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+                IMAGE_NAME: 'mohamed.younes/my-backend-repo'
+                TAG: 'latest'
+                DOCKERFILE: 'Dockerfile'
+        
+            # - pipe: atlassian/aws-ecs-deploy:1.12.2
+            #   variables:
+            #     AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+            #     AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+            #     AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+            #     CLUSTER_NAME: 'backend-nestjs-x'
+            #     SERVICE_NAME: 'run-backend-server'
+            #     FORCE_NEW_DEPLOYMENT: 'true'
+    - step: &push-ecr-image-staging
+          name: Build and Push Docker Image to Stage ECR
+          caches:
+            - node
+          services:
+            - docker
+          script:
+            - echo "Building Docker image for stage environment..."
+            - docker build -t mohamed.younes/my-backend-repo:latest .
+            - echo "Pushing Docker image to AWS ECR for stage environment..."
+            - pipe: atlassian/aws-ecr-push-image:2.3.0
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+                IMAGE_NAME: 'mohamed.younes/my-backend-repo'
+                TAG: 'latest'
+                DOCKERFILE: 'Dockerfile'
+    
+    - step: &push-ecr-image-prod
+          name: Build and Push Docker Image to Production ECR
+          caches:
+            - node
+          services:
+            - docker
+          script:
+            - echo "Building Docker image for production environment..."
+            - docker build -t mohamed.younes/my-backend-repo:latest .
+            - echo "Pushing Docker image to AWS ECR for production environment..."
+            - pipe: atlassian/aws-ecr-push-image:2.3.0
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+                IMAGE_NAME: 'mohamed.younes/my-backend-repo'
+                TAG: 'latest'
+                DOCKERFILE: 'Dockerfile'
+
+
+pipelines:
+  custom:
+    release-test:
+      - step:
+          <<: *push-ecr-image-test
+          name: Build and Push Docker Image to Test ECR
+          deployment: Test
+    release-staging:
+      - step:
+          <<: *push-ecr-image-staging
+          name: push ecr image to staging
+          deployment: staging
+                
+  # branches:
+    
+  #   develop:
+  #     - step:
+  #         <<: *push-ecr-image-test
+  #         name: Build and Push Docker Image to Test ECR
+  #         deployment: Test    
+    
+  #   release/*:
+  #     - step:
+  #         <<: *push-ecr-image-staging
+  #         name: push ecr image to staging
+  #         deployment: staging
+    
+  #   main:
+  #     - step:
+  #         <<: *push-ecr-image-prod
+  #         name: push ecr image to production
+  #         deployment: production
+    # release/*:
+    #   - step:
+    #       <<: *push-ecr-image-staging
+    #       name: push ecr image to staging on commits
+    #       deployment: staging

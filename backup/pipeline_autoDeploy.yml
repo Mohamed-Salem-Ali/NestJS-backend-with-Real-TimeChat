@@ -1,0 +1,83 @@
+
+image: atlassian/default-image:3
+
+definitions:
+  services:
+    docker:
+      memory: 2048 #increasing docker service memory
+  steps:
+    - step: &Build-push-preprod-ECR
+        size: 2x
+        name: Build, and push to Preprod ecr 
+        script:
+          - docker build -t my-ecr .
+          - pipe: atlassian/aws-ecr-push-image:1.5.0
+            variables:
+                AWS_ACCESS_KEY_ID: $preprod_AWS_ACCESKEY
+                AWS_SECRET_ACCESS_KEY: $preprod_SECRET_KEY
+                AWS_DEFAULT_REGION: us-east-1
+                IMAGE_NAME: my-ecr
+                TAGS: '${BITBUCKET_COMMIT} latest'
+    - step: &Deploy-preprod
+        size: 2x
+        name: ECS Deploy
+        deployment: preprod
+        script:
+            - apt-get update && apt-get install -y pip
+            - pip install ecs-deploy
+            - pip install awscli
+            - aws configure set aws_access_key_id "${AWS_KEY_ID}"
+            - aws configure set aws_secret_access_key "${AWS_SECRET_KEY}"
+            - ecs deploy --timeout 1200 --region ${AWS_DEFAULT_REGION} ${CLUSTER_NAME} ${SERVICE_NAME} --tag ${BITBUCKET_COMMIT} 
+
+pipelines:
+    branches:
+      main:
+        - step: *Build-push-preprod-ECR
+        - step: *Deploy-preprod
+
+
+
+
+              # - step:
+      #     name: Debug AWS Configuration
+      #     script:
+      #       - apt-get update && apt-get install -y pip
+      #       - pip install ecs-deploy
+      #       - pip install awscli
+      #       - aws configure set aws_access_key_id "${AWS_ACCESS_KEY_ID}"
+      #       - aws configure set aws_secret_access_key "${AWS_SECRET_ACCESS_KEY}"
+      #       - ecs deploy --timeout 1200 --region ${AWS_DEFAULT_REGION} ${CLUSTER_NAME} ${SERVICE_NAME} --tag ${BITBUCKET_COMMIT} 
+      # - step:
+      #     name: Deploy to ECS
+      #     script:
+      #       - pipe: atlassian/aws-ecs-deploy:1.12.2
+      #         variables:
+      #           AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+      #           AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+      #           AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+      #           CLUSTER_NAME: $CLUSTER_NAME
+      #           SERVICE_NAME: $SERVICE_NAME
+      #           CONTAINER_NAME: $CONTAINER_NAME
+      #           FORCE_NEW_DEPLOYMENT: 'true'
+      #           IMAGE_NAME: 'mohamed.younes/my-backend-repo:latest'
+      # - step:
+      #     deployment: Test
+      #     name: Deploy to ECS
+      #     script:
+          
+      #       #- rm -rf ~/.aws/credentials  # Remove old credentials
+      #       # - aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID  # Set the access key
+      #       # - aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY  # Set the secret key
+      #       # - aws configure set region $AWS_DEFAULT_REGION  # Set the region
+      #       # - aws sts get-caller-identity  # Verify the AWS CLI setup works
+      #       - pipe: atlassian/aws-ecs-deploy:1.12.2
+      #         variables:
+      #           AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+      #           AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+      #           AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+      #           CLUSTER_NAME: 'backend-nestjs'
+      #           SERVICE_NAME: 'run-the-backend-server'
+      #           FORCE_NEW_DEPLOYMENT: 'true'
+      #           #TASK_DEFINITION: 'arn:aws:ecs:us-east-1:767398012602:task-definition/App-demo-td:12'
+      #           # IMAGE_NAME: 'mohamed.younes/my-backend-repo:latest'

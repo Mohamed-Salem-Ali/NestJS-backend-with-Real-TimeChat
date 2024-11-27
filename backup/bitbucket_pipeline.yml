@@ -1,0 +1,127 @@
+image: node:22.9.0-alpine  # Alpine version of Node.js
+
+pipelines:
+  default:
+    - step:
+        name: Install dependencies
+        caches:
+          - node
+        script:
+          - npm install
+          - npx prisma generate
+
+          # Run any tests for your application
+          - npm run test
+          - npm run build
+        
+    
+    - step:
+        name: Start Database and Install Dependencies
+        services:
+          - postgres
+        script:
+          - echo "Database starting on hostname 'database'"
+          - docker run --name be-intern-database-1 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=root -e POSTGRES_DB=msa -d -p 5432:5432 postgres:15
+          - npm install 
+          # Waiting for the database to be fully available
+          - ./wait-for-it.sh database:5432 --timeout=30 -- echo "Database is ready"
+          
+          # Check that Prisma is able to connect to the database
+          - npx prisma db pull  # checks database connection before migrating
+          - npx prisma migrate deploy
+          
+          # Run any tests for your application
+          - npm run test
+
+          # Clean up the PostgreSQL container after the test run
+          - docker stop postgres-container
+          - docker rm postgres-container
+
+    - step:
+        name: Build and Push Docker Image
+        deployment: production
+        script:
+          # Build the Docker image for the backend
+          - docker build -t myapp/backend:latest .
+
+          # Tag the Docker image for the registry
+          - docker tag myapp/backend:latest mohamedsalemali/myapp/backend:latest
+
+          # Push the image to the Docker registry
+          - docker push mohamedsalemali/myapp/backend:latest
+
+definitions:
+  services:
+    docker:
+      memory: 2048  # adjust memory if needed
+    postgres:
+      image: postgres:15
+      environment:
+        POSTGRES_USER: postgres
+        POSTGRES_PASSWORD: root
+        POSTGRES_DB: msa
+
+
+
+  default:
+    - step:
+        name: Install Docker, Docker Compose, Install Dependencies, Build Containers, Run Tests, Cleanup
+        caches:
+          - node
+        script:
+          # Install Docker and Docker Compose (same as before)
+          - apk add --no-cache docker
+          - apk add --no-cache curl
+          - curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          - chmod +x /usr/local/bin/docker-compose
+          # Step 4: Add /usr/local/bin to the PATH
+          - export PATH=$PATH:/usr/local/bin
+          # Install Node.js dependencies
+          - npm install
+          - npx prisma generate
+
+          # Step 4: Run Docker Compose using the built-in plugin
+          - docker compose up --build -d
+
+          # Wait for PostgreSQL to be ready
+          - dockerize -wait tcp://db:5432 -timeout 30s
+
+          # Run tests
+          - npm run test
+
+          # Clean up containers after tests
+          - docker-compose down
+
+    - step:
+        name: Install Dependencies and Start Services
+        caches:
+          - node
+        script:
+          # Install Node.js and npm since we're using a Docker CLI image
+          - apk add --no-cache nodejs npm
+          - npm install
+          - npx prisma generate
+          - docker-compose up --build
+          # Start PostgreSQL container
+          - docker run --name my-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=root -e POSTGRES_DB=msa -p 5432:5432 -d postgres:15
+
+          # Wait for PostgreSQL to initialize
+          - echo "Waiting for PostgreSQL to start..."
+          - until docker exec my-postgres pg_isready -U postgres; do sleep 2; done
+
+          # Build the backend Docker image
+          - docker build -t my-backend .
+
+    - step:
+        name: Run Backend Container and Tests
+        caches:
+          - node
+        script:
+          # Run backend container with link to PostgreSQL
+          - docker run --name my-backend --link my-postgres:postgres -e DATABASE_URL=postgresql://postgres:root@postgres:5432/msa -p 3000:3000 -d my-backend
+
+          # Test the application
+          - npm run test
+
+          # Optional: Build the project
+          - npm run build
